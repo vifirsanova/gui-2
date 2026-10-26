@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grammar Trainer</title>
+<style>
+  :root{
+    --bg:#f7f7f8;
+    --surface:#ffffff;
+    --ink:#0f0f10;
+    --ink-2:#5c5c60;
+    --ink-3:#8f8f95;
+    --line:#e6e6e8;
+    --line-2:#f0f0f2;
+    --ok:#1a7f37;
+    --err:#b42318;
+    --accent:#0f0f10;
+    --r:12px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+
+    --bar-h:56px;
+    --pane-h:300px;
+    --pane-w:420px;
+    --grip:6px;
+    --grip-hit:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+            font-family:var(--font);font-size:15px;line-height:1.55;
+            -webkit-font-smoothing:antialiased;overflow:hidden}
+
+  /* ================= shell ================= */
+  .app{
+    height:100vh;
+    display:grid;
+    grid-template-rows: var(--bar-h) 1fr var(--grip) var(--pane-h);
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "bar"
+      "stage"
+      "grip"
+      "inspector";
+  }
+  .app.side{
+    grid-template-rows: var(--bar-h) 1fr;
+    grid-template-columns: var(--pane-w) var(--grip) 1fr;
+    grid-template-areas:
+      "bar       bar   bar"
+      "inspector grip  stage";
+  }
+
+  /* ================= top bar ================= */
+  .bar{grid-area:bar;display:flex;align-items:center;justify-content:space-between;
+       padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line);
+       z-index:30}
+  .bar .left{display:flex;align-items:center;gap:20px}
+  .bar .crumb{font-size:14px;color:var(--ink-2)}
+  .bar .crumb b{color:var(--ink);font-weight:600}
+  .bar .seg{display:flex;background:var(--line-2);padding:3px;border-radius:9px}
+  .bar .seg button{border:0;background:transparent;padding:6px 13px;
+                   border-radius:7px;font-size:13px;color:var(--ink-2);cursor:pointer;
+                   font-family:inherit}
+  .bar .seg button.active{background:var(--surface);color:var(--ink);
+                          box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .bar .right{display:flex;align-items:center;gap:14px}
+
+  .diff{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink-2)}
+  .diff .track{position:relative;width:120px;height:4px;background:var(--line);
+               border-radius:2px;cursor:pointer;touch-action:none}
+  .diff .track i{position:absolute;top:0;left:0;height:4px;background:var(--ink);
+                 border-radius:2px;width:40%}
+  .diff .knob{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;
+              background:var(--surface);border:1.5px solid var(--ink);
+              transform:translate(-50%,-50%);left:40%;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .diff .num{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;
+             min-width:26px;text-align:right}
+
+  .icon-btn{border:1px solid var(--line);background:var(--surface);
+            border-radius:8px;padding:6px 10px;font-size:12px;color:var(--ink-2);
+            cursor:pointer;font-family:inherit}
+  .icon-btn:hover{color:var(--ink);border-color:#cfcfd2}
+
+  /* ================= stage ================= */
+  .stage{grid-area:stage;overflow-y:auto;display:flex;justify-content:center;
+         padding:40px 24px 24px;min-height:0}
+  .doc{width:100%;max-width:680px}
+
+  .doc-head{display:flex;justify-content:space-between;align-items:baseline;
+            margin-bottom:40px;font-size:13px;color:var(--ink-3)}
+  .doc-head .step{color:var(--ink-2);font-weight:500}
+  .doc-head .stat{font-variant-numeric:tabular-nums}
+
+  .prompt{font-size:26px;line-height:1.45;letter-spacing:-.01em;
+          font-weight:500;margin:0 0 40px;color:var(--ink)}
+  .prompt .blank{display:inline-block;min-width:130px;border-bottom:2px solid var(--ink);
+                 color:var(--ink-3);text-align:center;padding:0 8px 3px;font-weight:400}
+  .prompt .hintw{font-size:14px;color:var(--ink-3);font-weight:400;margin-left:4px}
+
+  .choices{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+  .choice{display:flex;align-items:center;gap:18px;padding:18px 6px;
+          border-bottom:1px solid var(--line);cursor:pointer;background:transparent;
+          border-left:0;border-right:0;text-align:left;font-family:inherit;
+          font-size:16px;color:var(--ink);transition:padding .15s;width:100%}
+  .choice:hover{padding-left:14px;padding-right:0}
+  .choice .mark{width:20px;height:20px;border-radius:50%;
+                border:1.5px solid var(--line);flex:none;position:relative;
+                transition:.15s}
+  .choice.sel .mark{border-color:var(--ink)}
+  .choice.sel .mark::after{content:"";position:absolute;inset:3px;
+                           border-radius:50%;background:var(--ink)}
+  .choice.ok .mark{border-color:var(--ok);background:var(--ok)}
+  .choice.ok .mark::after{background:#fff;inset:4px;border-radius:50%}
+  .choice.bad .mark{border-color:var(--err);background:var(--err)}
+  .choice.bad .mark::after{background:#fff;inset:4px;border-radius:50%}
+  .choice .txt{flex:1}
+  .choice .idx{font-family:var(--mono);font-size:12px;color:var(--ink-3);
+               min-width:16px;text-align:right}
+
+  .doc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:32px}
+  .doc-foot .keys{font-size:13px;color:var(--ink-3)}
+  .btn{border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:500;
+       cursor:pointer;font-family:inherit}
+  .btn.primary{background:var(--ink);color:#fff}
+  .btn.primary:disabled{opacity:.3;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--line)}
+  .btn.ghost:hover{color:var(--ink);border-color:#cfcfd2}
+
+  /* ================= inspector ================= */
+  .inspector{grid-area:inspector;background:var(--surface);
+             border-top:1px solid var(--line);
+             display:flex;flex-direction:column;overflow:hidden;min-height:0}
+  .app.side .inspector{border-top:0;border-right:1px solid var(--line)}
+
+  .insp-head{display:flex;justify-content:space-between;align-items:center;
+             padding:12px 22px;border-bottom:1px solid var(--line-2);flex:none;
+             gap:12px;flex-wrap:wrap}
+  .insp-head .tabs{display:flex;gap:4px}
+  .insp-head .tabs button{border:0;background:transparent;padding:7px 12px;
+                          border-radius:8px;font-size:13px;color:var(--ink-3);
+                          cursor:pointer;font-family:inherit}
+  .insp-head .tabs button.active{background:var(--line-2);color:var(--ink);font-weight:500}
+  .insp-head .meta{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+  .insp-body{flex:1;overflow-y:auto;padding:0 22px;min-height:0}
+
+  /* log */
+  .log{list-style:none;margin:0;padding:14px 0}
+  .ev{display:grid;grid-template-columns:28px 1fr;gap:14px;
+      padding:12px 0;border-bottom:1px solid var(--line-2)}
+  .ev:last-child{border-bottom:0}
+  .ev .dot{width:22px;height:22px;border-radius:50%;
+           display:grid;place-items:center;flex:none;margin-top:1px;
+           background:var(--line-2);color:var(--ink-2);font-size:11px;
+           font-weight:600;font-family:var(--mono)}
+  .ev.bot .dot{background:var(--ink);color:#fff}
+  .ev.you .dot{background:#e6e6e8;color:var(--ink)}
+  .ev.diff .dot{background:#eef1ff;color:#2d3a8c}
+  .ev.mat .dot{background:#eef7ee;color:var(--ok)}
+  .ev.ok .dot{background:#eef7ee;color:var(--ok)}
+  .ev.err .dot{background:#fbeeee;color:var(--err)}
+
+  .ev .main{min-width:0}
+  .ev .row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .ev .who{font-size:13px;font-weight:600;color:var(--ink)}
+  .ev .ts{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);
+          font-variant-numeric:tabular-nums}
+  .ev .text{font-size:14.5px;color:var(--ink);margin-top:3px;line-height:1.5}
+  .ev .text em{font-style:normal;font-family:var(--mono);font-size:13px;
+               background:var(--line-2);padding:1px 6px;border-radius:5px;
+               color:var(--ink-2)}
+  .ev .note{font-size:13px;color:var(--ink-3);margin-top:4px;
+            padding-left:10px;border-left:2px solid var(--line-2)}
+
+  /* actions */
+  .actions{display:flex;flex-direction:column;padding:8px 0}
+  .action{display:flex;align-items:center;justify-content:space-between;
+          padding:16px 0;border-bottom:1px solid var(--line-2);
+          background:transparent;border-left:0;border-right:0;border-top:0;
+          cursor:pointer;font-family:inherit;font-size:15px;color:var(--ink);
+          text-align:left;width:100%;gap:12px}
+  .action:last-child{border-bottom:0}
+  .action:hover .go{transform:translateX(2px)}
+  .action .desc{color:var(--ink-3);font-size:13px;margin-top:2px}
+  .action .go{font-size:14px;color:var(--ink-3);transition:transform .15s}
+
+  /* materials */
+  .materials{padding:12px 22px 24px;display:grid;
+             grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+  .app.side .materials{grid-template-columns:repeat(2,1fr)}
+  @media (max-width:1400px){ .app.side .materials{grid-template-columns:1fr} }
+  .mat{background:var(--surface);padding:18px 20px;cursor:pointer;
+       display:flex;flex-direction:column;gap:6px;transition:background .15s}
+  .mat:hover{background:#fbfbfc}
+  .mat .tag{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;
+            color:var(--ink-3);font-weight:500}
+  .mat .t{font-size:15px;font-weight:600;letter-spacing:-.005em}
+  .mat .d{font-size:13px;color:var(--ink-2);line-height:1.5}
+  .mat.related .tag{color:var(--ink)}
+
+  /* composer */
+  .composer{display:flex;gap:10px;padding:12px 22px;border-top:1px solid var(--line-2);
+            background:var(--surface);align-items:center;flex:none}
+  .composer input{flex:1;border:1px solid var(--line);border-radius:8px;
+                  padding:10px 14px;font-size:14px;font-family:inherit;
+                  background:var(--surface);min-width:0}
+  .composer input:focus{outline:none;border-color:#cfcfd2}
+  .composer .left-note{font-size:12px;color:var(--ink-3);
+                       font-variant-numeric:tabular-nums;min-width:78px;
+                       text-align:right}
+
+  /* ================= grip ================= */
+  .grip{
+    grid-area:grip;
+    position:relative;
+    background:transparent;
+    z-index:20;
+    touch-action:none;
+    user-select:none;
+  }
+  .grip:focus-visible{outline:none}
+  .grip::before{
+    content:"";
+    position:absolute;
+    inset:calc(-1 * (var(--grip-hit) - var(--grip)) / 2);
+  }
+  .grip::after{
+    content:"";
+    position:absolute;
+    background:var(--line);
+    border-radius:2px;
+    transition:background .15s;
+  }
+  .grip:hover::after,
+  .grip.dragging::after{background:#bcbcc0}
+  .grip:focus-visible::after{background:var(--ink)}
+
+  /* горизонтальная ручка (по умолчанию, панель снизу) */
+  .app:not(.side) .grip{cursor:ns-resize}
+  .app:not(.side) .grip::after{
+    left:50%;top:50%;width:44px;height:4px;transform:translate(-50%,-50%);
+  }
+  /* вертикальная ручка (панель слева) */
+  .app.side .grip{cursor:ew-resize}
+  .app.side .grip::after{
+    top:50%;left:50%;width:4px;height:44px;transform:translate(-50%,-50%);
+  }
+
+  /* ================= sheet ================= */
+  .sheet{position:fixed;inset:0;background:rgba(15,15,16,.32);
+         display:none;align-items:flex-end;justify-content:center;z-index:40}
+  .sheet.open{display:flex}
+  .sheet .paper{background:var(--surface);width:100%;max-width:780px;
+                max-height:80vh;border-radius:16px 16px 0 0;
+                display:flex;flex-direction:column;overflow:hidden}
+  .sheet header{display:flex;justify-content:space-between;align-items:center;
+                padding:18px 26px;border-bottom:1px solid var(--line-2)}
+  .sheet header h3{margin:0;font-size:16px;font-weight:600}
+  .sheet header button{border:0;background:transparent;font-size:14px;
+                       color:var(--ink-2);cursor:pointer;font-family:inherit}
+  .sheet .content{padding:24px 26px;overflow-y:auto;font-size:14.5px;line-height:1.7}
+  .sheet .content h4{font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+                     color:var(--ink-3);margin:22px 0 8px;font-weight:600}
+  .sheet .content h4:first-child{margin-top:0}
+  .sheet .formula{font-family:var(--mono);font-size:14px;background:var(--line-2);
+                  padding:12px 14px;border-radius:8px;margin:8px 0}
+  .sheet .content ul{margin:8px 0;padding-left:20px}
+  .sheet .wrong{color:var(--err);text-decoration:line-through}
+  .sheet .right{color:var(--ok);font-weight:500}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <div class="bar">
+    <div class="left">
+      <div class="crumb"><b>Present Perfect</b> · сессия #S-118</div>
+      <div class="seg">
+        <button class="active">Тренажёр</button>
+        <button>Прогресс</button>
+      </div>
+    </div>
+    <div class="right">
+      <div class="diff" title="Сложность">
+        <span>Сложность</span>
+        <div class="track" id="track"><i id="fill"></i><div class="knob" id="knob"></div></div>
+        <span class="num" id="num">2</span>
+      </div>
+      <button class="icon-btn" id="layoutBtn" title="Переключить положение панели">Слева</button>
+      <button class="btn ghost" id="matBtn">Материалы</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="doc">
+      <div class="doc-head">
+        <span class="step">Упражнение 03 из 10</span>
+        <span class="stat" id="sessionStat">верно 2 · ошибок 1</span>
+      </div>
+
+      <h1 class="prompt">
+        She <span class="blank" id="blank">___</span>
+        <span class="hintw">(to finish)</span> her homework already.
+      </h1>
+
+      <div class="choices" id="choices">
+        <button class="choice" data-correct="false">
+          <span class="mark"></span><span class="txt">have finished</span><span class="idx">1</span>
+        </button>
+        <button class="choice" data-correct="true">
+          <span class="mark"></span><span class="txt">has finished</span><span class="idx">2</span>
+        </button>
+        <button class="choice" data-correct="false">
+          <span class="mark"></span><span class="txt">finished</span><span class="idx">3</span>
+        </button>
+      </div>
+
+      <div class="doc-foot">
+        <span class="keys">1–3 — выбрать · Enter — проверить · M — материалы</span>
+        <button class="btn primary" id="check" disabled>Проверить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grip" id="grip" role="separator" tabindex="0"
+       aria-label="Изменить размер панели" aria-orientation="horizontal"></div>
+
+  <div class="inspector" id="inspector">
+    <div class="insp-head">
+      <div class="tabs">
+        <button class="active" data-tab="log">Журнал</button>
+        <button data-tab="actions">Действия</button>
+        <button data-tab="materials">Материалы</button>
+      </div>
+      <div class="meta">сообщений: <b id="left">5</b> из 5</div>
+    </div>
+
+    <div class="insp-body" id="view-log">
+      <ul class="log" id="log">
+        <li class="ev diff">
+          <div class="dot">2</div>
+          <div class="main">
+            <div class="row"><span class="who">Сложность</span><span class="ts">00:00</span></div>
+            <div class="text">Старт на уровне 2 — по результату входного теста</div>
+          </div>
+        </li>
+        <li class="ev you err">
+          <div class="dot">Т</div>
+          <div class="main">
+            <div class="row"><span class="who">Ты</span><span class="ts">00:12</span></div>
+            <div class="text">Выбран вариант <em>have finished</em> — неверно</div>
+            <div class="note">She → has; ошибка согласования подлежащего и глагола</div>
+          </div>
+        </li>
+        <li class="ev bot">
+          <div class="dot">П</div>
+          <div class="main">
+            <div class="row"><span class="who">Помощник</span><span class="ts">00:20</span></div>
+            <div class="text">Объяснено правило <em>has vs have</em></div>
+            <div class="note">1 сообщение · без выхода в свободный чат</div>
+          </div>
+        </li>
+        <li class="ev mat">
+          <div class="dot">Ш</div>
+          <div class="main">
+            <div class="row"><span class="who">Материалы</span><span class="ts">00:26</span></div>
+            <div class="text">Открыта шпаргалка <em>Present Perfect — кратко</em></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="insp-body" id="view-actions" hidden>
+      <div class="actions">
+        <button class="action" onclick="act('Объясни правило')">
+          <div><div>Объяснить правило</div>
+            <div class="desc">1–2 предложения по текущему заданию</div></div>
+          <span class="go">→</span>
+        </button>
+        <button class="action" onclick="act('Почему мой ответ неверный?')">
+          <div><div>Разобрать мою ошибку</div>
+            <div class="desc">почему выбранный вариант неверен</div></div>
+          <span class="go">→</span>
+        </button>
+        <button class="action" onclick="openSheet()">
+          <div><div>Открыть шпаргалку</div>
+            <div class="desc">Present Perfect — формула, маркеры, типичная ошибка</div></div>
+          <span class="go">→</span>
+        </button>
+        <button class="action" onclick="act('Сложнее')">
+          <div><div>Сложнее</div>
+            <div class="desc">+1 к уровню; конструкции посложнее</div></div>
+          <span class="go">→</span>
+        </button>
+        <button class="action" onclick="act('Легче')">
+          <div><div>Легче</div>
+            <div class="desc">−1 к уровню; проще лексика, меньше дистракторов</div></div>
+          <span class="go">→</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="insp-body" id="view-materials" hidden>
+      <div class="materials">
+        <div class="mat related" onclick="openSheet()">
+          <div class="tag">по заданию</div><div class="t">Краткая шпаргалка</div>
+          <div class="d">Формула, маркеры, типичная ошибка</div>
+        </div>
+        <div class="mat" onclick="openSheet()">
+          <div class="tag">сравнение</div><div class="t">Present Perfect vs Past Simple</div>
+          <div class="d">Когда какой использовать</div>
+        </div>
+        <div class="mat" onclick="openSheet()">
+          <div class="tag">опоры</div><div class="t">Сигнальные слова</div>
+          <div class="d">already · yet · just · ever · never</div>
+        </div>
+        <div class="mat" onclick="openSheet()">
+          <div class="tag">морфология</div><div class="t">3-е лицо единственного</div>
+          <div class="d">has vs have</div>
+        </div>
+        <div class="mat" onclick="openSheet()">
+          <div class="tag">ошибки</div><div class="t">Топ-5 ошибок в Present Perfect</div>
+          <div class="d">по статистике твоей группы</div>
+        </div>
+        <div class="mat" onclick="openSheet()">
+          <div class="tag">углубление</div><div class="t">Perfect Continuous</div>
+          <div class="d">следующая тема</div>
+        </div>
+      </div>
+    </div>
+
+    <form class="composer" id="composer" onsubmit="return sendCustom(event)">
+      <input id="input" placeholder="Вопрос по текущему заданию…" autocomplete="off">
+      <span class="left-note"><b id="left2">5</b> из 5</span>
+    </form>
+  </div>
+
+</div>
+
+<div class="sheet" id="sheet" onclick="if(event.target===this)closeSheet()">
+  <div class="paper">
+    <header><h3>Present Perfect — кратко</h3><button onclick="closeSheet()">Закрыть</button></header>
+    <div class="content">
+      <h4>Формула</h4>
+      <div class="formula">have / has + V3</div>
+      <ul>
+        <li>I / you / we / they → <b>have</b></li>
+        <li>he / she / it → <b>has</b></li>
+      </ul>
+      <h4>Сигнальные слова</h4>
+      <ul><li>already · yet · just · ever · never · since · for</li></ul>
+      <h4>Типичная ошибка</h4>
+      <ul>
+        <li><span class="wrong">She have finished</span> → <span class="right">She has finished</span></li>
+        <li><span class="wrong">I has seen</span> → <span class="right">I have seen</span></li>
+      </ul>
+      <h4>Когда использовать</h4>
+      <ul>
+        <li>Результат важен сейчас: <i>She has finished her homework.</i></li>
+        <li>Опыт к настоящему моменту: <i>I have never been to London.</i></li>
+      </ul>
+      <h4>Сравнить</h4>
+      <ul>
+        <li>Past Simple — факт с указанием времени: <i>She finished at 5 pm.</i></li>
+        <li>Present Perfect — без указания времени: <i>She has finished.</i></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= exercise ================= */
+const choices = [...document.querySelectorAll('.choice')];
+const checkBtn = document.getElementById('check');
+let selected = null;
+choices.forEach(c => c.addEventListener('click', () => {
+  choices.forEach(x => x.classList.remove('sel','ok','bad'));
+  c.classList.add('sel'); selected = c; checkBtn.disabled = false;
+}));
+
+document.addEventListener('keydown', e => {
+  if(e.target.matches('input,textarea')) return;
+  if(['1','2','3'].includes(e.key)){ choices[+e.key-1]?.click(); }
+  if(e.key === 'Enter' && !checkBtn.disabled){ checkBtn.click(); }
+  if(e.key.toLowerCase() === 'm'){ toggleMaterials(); }
+  if(e.key === 'Escape'){ closeSheet(); }
+});
+
+checkBtn.addEventListener('click', () => {
+  if(!selected) return;
+  const ok = selected.dataset.correct === 'true';
+  const word = selected.querySelector('.txt').textContent;
+  selected.classList.remove('sel');
+  selected.classList.add(ok ? 'ok' : 'bad');
+  document.getElementById('blank').textContent = word;
+  checkBtn.disabled = true;
+  if(ok){
+    logEvent('you ok','Т','Ты','Ответ верный: <em>'+word+'</em>');
+    logEvent('bot','П','Помощник','Подтверждено правило have/has + V3');
+    bump(+1, 'верно — правило закрепляется');
+  } else {
+    logEvent('you err','Т','Ты','Ответ неверный: <em>'+word+'</em>',
+             'She → has; ошибка согласования');
+    bump(-1, 'ошибка — усложнение приостановлено');
+  }
+});
+
+/* ================= tabs ================= */
+const tabs = [...document.querySelectorAll('.insp-head .tabs button')];
+const views = {
+  log: document.getElementById('view-log'),
+  actions: document.getElementById('view-actions'),
+  materials: document.getElementById('view-materials')
+};
+const composer = document.getElementById('composer');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  Object.values(views).forEach(v => v.hidden = true);
+  views[t.dataset.tab].hidden = false;
+  composer.style.display = t.dataset.tab === 'log' ? 'flex' : 'none';
+}));
+
+/* ================= log ================= */
+const logEl = document.getElementById('log');
+const t0 = Date.now();
+function stamp(){
+  const s = Math.floor((Date.now()-t0)/1000);
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+function logEvent(cls, dot, who, text, note){
+  const li = document.createElement('li');
+  li.className = 'ev ' + cls;
+  li.innerHTML = `
+    <div class="dot">${dot}</div>
+    <div class="main">
+      <div class="row"><span class="who">${who}</span><span class="ts">${stamp()}</span></div>
+      <div class="text">${text}</div>
+      ${note ? `<div class="note">${note}</div>` : ''}
+    </div>`;
+  logEl.appendChild(li);
+  logEl.parentElement.scrollTop = logEl.parentElement.scrollHeight;
+}
+
+/* ================= chat-as-log ================= */
+let left = 5;
+const leftEl = document.getElementById('left');
+const leftEl2 = document.getElementById('left2');
+function spend(){
+  if(left <= 0){
+    logEvent('bot','П','Помощник','Лимит сообщений по упражнению исчерпан — помощник вернётся на следующем');
+    return false;
+  }
+  left--; leftEl.textContent = left; if(leftEl2) leftEl2.textContent = left;
+  return true;
+}
+function sendCustom(e){
+  e.preventDefault();
+  const inp = document.getElementById('input');
+  const v = inp.value.trim();
+  if(!v || !spend()) return false;
+  inp.value = '';
+  route(v);
+  return false;
+}
+function act(text){ if(spend()) route(text); }
+function route(text){
+  const t = text.toLowerCase();
+  logEvent('you','Т','Ты', text);
+  setTimeout(() => {
+    if(t.includes('шпарг') || t.includes('правил')){
+      logEvent('bot','П','Помощник','Открываю шпаргалку по теме задания');
+      openSheet();
+    } else if(t.includes('сложно')){
+      logEvent('bot','П','Помощник','Принято: следующее упражнение будет сложнее');
+      bump(+1,'по запросу ученика');
+    } else if(t.includes('легче') || t.includes('легко')){
+      logEvent('bot','П','Помощник','Принято: следующее упражнение будет проще');
+      bump(-1,'по запросу ученика');
+    } else if(t.includes('неверн')){
+      logEvent('bot','П','Помощник','Ошибка в согласовании: 3-е лицо ед. ч. → has');
+    } else {
+      logEvent('bot','П','Помощник',
+        'Отвечаю только по грамматике текущего задания',
+        'сообщение не отправлено модели — сработал фильтр темы');
+    }
+  }, 200);
+}
+
+/* ================= difficulty ================= */
+let level = 2;
+const knob = document.getElementById('knob');
+const fill = document.getElementById('fill');
+const num  = document.getElementById('num');
+const track = document.getElementById('track');
+function renderDiff(){
+  const pct = ((level-1)/4)*100;
+  knob.style.left = pct+'%'; fill.style.width = pct+'%'; num.textContent = level;
+}
+function bump(delta, reason){
+  const prev = level;
+  level = Math.max(1, Math.min(5, level + delta));
+  renderDiff();
+  logEvent('diff', String(level), 'Сложность', `${prev} → ${level}`, reason);
+}
+renderDiff();
+let draggingDiff = false;
+track.addEventListener('pointerdown', e => {
+  draggingDiff = true;
+  try{ track.setPointerCapture(e.pointerId); }catch(_){}
+  pickDiff(e);
+  window.addEventListener('pointermove', onDiffMove);
+  window.addEventListener('pointerup', onDiffUp, { once:true });
+  window.addEventListener('pointercancel', onDiffUp, { once:true });
+  e.preventDefault();
+});
+function onDiffMove(e){ if(draggingDiff) pickDiff(e); }
+function onDiffUp(e){
+  draggingDiff = false;
+  window.removeEventListener('pointermove', onDiffMove);
+  try{ track.releasePointerCapture(e.pointerId); }catch(_){}
+}
+function pickDiff(e){
+  const r = track.getBoundingClientRect();
+  const p = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const lvl = Math.round(p*4)+1;
+  if(lvl !== level) bump(lvl - level, 'вручную');
+}
+
+/* ================= sheet ================= */
+const sheet = document.getElementById('sheet');
+function openSheet(){
+  sheet.classList.add('open');
+  logEvent('mat','Ш','Материалы','Открыта шпаргалка <em>Present Perfect — кратко</em>');
+}
+function closeSheet(){ sheet.classList.remove('open'); }
+
+/* =====================================================
+   ЛЕЙАУТ + РЕСАЙЗ
+   ===================================================== */
+const KEY_LAYOUT = 'gt-layout';
+const KEY_H      = 'gt-pane-h';
+const KEY_W      = 'gt-pane-w';
+
+const MIN_H = 140, MIN_W = 320;
+const maxH = () => Math.round(window.innerHeight * 0.6);
+const maxW = () => Math.min(720, Math.round(window.innerWidth * 0.6));
+
+const app       = document.getElementById('app');
+const layoutBtn = document.getElementById('layoutBtn');
+const matBtn    = document.getElementById('matBtn');
+const grip      = document.getElementById('grip');
+
+/* ---- CSS числа ---- */
+function cssNum(name){
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function setPaneH(px){
+  px = Math.round(Math.max(MIN_H, Math.min(maxH(), px)));
+  document.documentElement.style.setProperty('--pane-h', px + 'px');
+  try{ localStorage.setItem(KEY_H, px); }catch(_){}
+}
+function setPaneW(px){
+  px = Math.round(Math.max(MIN_W, Math.min(maxW(), px)));
+  document.documentElement.style.setProperty('--pane-w', px + 'px');
+  try{ localStorage.setItem(KEY_W, px); }catch(_){}
+}
+
+/* ---- восстановление ---- */
+(function restore(){
+  try{
+    const h = parseFloat(localStorage.getItem(KEY_H));
+    if(Number.isFinite(h)) setPaneH(h);
+    const w = parseFloat(localStorage.getItem(KEY_W));
+    if(Number.isFinite(w)) setPaneW(w);
+  }catch(_){}
+})();
+
+/* ---- режим ---- */
+function savedLayout(){
+  try{ return localStorage.getItem(KEY_LAYOUT); }catch(_){ return null; }
+}
+function getMode(){
+  const s = savedLayout();
+  if(s === 'side' || s === 'bottom') return s;
+  return window.innerWidth >= 1100 ? 'side' : 'bottom';
+}
+function applyLayout(mode){
+  const isSide = mode === 'side';
+  app.classList.toggle('side', isSide);
+  layoutBtn.textContent = isSide ? 'Снизу' : 'Слева';
+  grip.setAttribute('aria-orientation', isSide ? 'vertical' : 'horizontal');
+}
+applyLayout(getMode());
+
+/* реакция на изменение ширины окна — только если пользователь не выбрал вручную */
+if(window.matchMedia){
+  const mq = window.matchMedia('(min-width: 1100px)');
+  const handler = () => { if(!savedLayout()) applyLayout(mq.matches ? 'side' : 'bottom'); };
+  if(mq.addEventListener) mq.addEventListener('change', handler);
+  else if(mq.addListener) mq.addListener(handler);
+}
+
+layoutBtn.addEventListener('click', () => {
+  const next = app.classList.contains('side') ? 'bottom' : 'side';
+  try{ localStorage.setItem(KEY_LAYOUT, next); }catch(_){}
+  applyLayout(next);
+});
+
+matBtn.addEventListener('click', toggleMaterials);
+function toggleMaterials(){
+  const t = tabs.find(x => x.dataset.tab === 'materials');
+  t.click();
+}
+
+/* ---- ресайз ---- */
+let dragAxis = null;
+let startPos = 0;
+let startVal = 0;
+
+grip.addEventListener('pointerdown', e => {
+  dragAxis = app.classList.contains('side') ? 'v' : 'h';
+  grip.classList.add('dragging');
+  try{ grip.setPointerCapture(e.pointerId); }catch(_){}
+
+  if(dragAxis === 'h'){
+    startPos = e.clientY;
+    startVal = cssNum('--pane-h');
+  } else {
+    startPos = e.clientX;
+    startVal = cssNum('--pane-w');
+  }
+
+  window.addEventListener('pointermove', onGripMove, { passive:false });
+  window.addEventListener('pointerup', onGripUp, { once:true });
+  window.addEventListener('pointercancel', onGripUp, { once:true });
+  e.preventDefault();
+});
+
+function onGripMove(e){
+  if(!dragAxis) return;
+  if(dragAxis === 'h'){
+    setPaneH(startVal + (startPos - e.clientY));
+  } else {
+    setPaneW(startVal + (e.clientX - startPos));
+  }
+  e.preventDefault();
+}
+function onGripUp(e){
+  dragAxis = null;
+  grip.classList.remove('dragging');
+  window.removeEventListener('pointermove', onGripMove);
+  try{ grip.releasePointerCapture(e.pointerId); }catch(_){}
+}
+
+grip.addEventListener('keydown', e => {
+  const isSide = app.classList.contains('side');
+  const step = 24;
+  if(isSide){
+    if(e.key === 'ArrowLeft'){ setPaneW(cssNum('--pane-w') - step); e.preventDefault(); }
+    if(e.key === 'ArrowRight'){ setPaneW(cssNum('--pane-w') + step); e.preventDefault(); }
+    if(e.key === 'Home'){ setPaneW(MIN_W); e.preventDefault(); }
+    if(e.key === 'End'){ setPaneW(maxW()); e.preventDefault(); }
+  } else {
+    if(e.key === 'ArrowUp'){ setPaneH(cssNum('--pane-h') + step); e.preventDefault(); }
+    if(e.key === 'ArrowDown'){ setPaneH(cssNum('--pane-h') - step); e.preventDefault(); }
+    if(e.key === 'Home'){ setPaneH(MIN_H); e.preventDefault(); }
+    if(e.key === 'End'){ setPaneH(maxH()); e.preventDefault(); }
+  }
+});
+
+/* clamp при resize окна, без сброса */
+window.addEventListener('resize', () => {
+  setPaneH(cssNum('--pane-h'));
+  setPaneW(cssNum('--pane-w'));
+});
+</script>
+</body>
+</html>
